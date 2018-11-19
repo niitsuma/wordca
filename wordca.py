@@ -75,21 +75,23 @@ class WordCA:
         fname_contingencytable=filename_base2+'.ct.npz'
         fname_correspondenceanalysis=filename_base2+'-'+str(size)+'.dca'
         import os
-        if os.path.exists(fname_correspondenceanalysis):
-            self.correspondenceanalysis.load(fname_correspondenceanalysis)
+        if os.path.exists(fname_correspondenceanalysis+'.npz'):
+            print('load',fname_correspondenceanalysis)
+            self.correspondenceanalysis.load(fname_correspondenceanalysis+'.npz')
             self.index2word=index2word_load_csv(filename_base)
-            return self
+            return
         if os.path.exists(fname_contingencytable):
+            print('load',fname_contingencytable)
             self.contingencytable=scipy.sparse.load_npz(fname_contingencytable)
             self.correspondenceanalysis.fit(self.contingencytable)
             self.correspondenceanalysis.save(fname_correspondenceanalysis)
-            return self
+            return
         self.load_concurrence_bin(filename_base,window=window,index_shift=index_shift)
         index2word_save_csv(filename_base,self.index2word)
         scipy.sparse.save_npz(fname_contingencytable, self.contingencytable)
         self.correspondenceanalysis.fit(self.contingencytable)
         self.correspondenceanalysis.save(fname_correspondenceanalysis)
-        return self
+        return
         
     def load_coo_bin(self,filename):
         self.contingencytable = load_sparse_coo_bin(filename,self.shape,np.float64,np.uint64,index_shift=self.index_shift)
@@ -151,6 +153,7 @@ def eval_ws(model,wsfile='testsets/ws/ws353_similarity.txt'):
                 test.append(((x, y), sim))
         return test
     from scipy.stats.stats import spearmanr
+   
     data=read_ws_test_set(wsfile)                
     results = []
     for (x, y), sim in data:
@@ -159,10 +162,15 @@ def eval_ws(model,wsfile='testsets/ws/ws353_similarity.txt'):
     return spearmanr(actual, expected)[0]
 
 if __name__ == '__main__':
-    #corpus='text01'
-    corpus='text8'
-    wca=WordCA(corpus)
-    print(eval_ws(wca))
-    
+    import sys
+    if len(sys.argv)==2:
+        corpus=sys.argv[1]
+        print(corpus)
+        #corpus='text01'
+        wca=WordCA(corpus)
+        wsfile='testsets/ws/ws353_similarity.txt'
+        print(wsfile)
+        print('word similarity score=',eval_ws(wca))
+
 
 
