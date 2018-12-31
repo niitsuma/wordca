@@ -5,14 +5,18 @@ CFLAGS = -lm -pthread -Ofast -march=native -funroll-loops -Wno-unused-result
 BUILDDIR := build
 SRCDIR := src
 
-all: dir vocab_count cooccur
+all: dir vocab_count cooccur wordcooccurleftfixlen
 
 dir :
 	mkdir -p $(BUILDDIR)
 cooccur : $(SRCDIR)/cooccur.c
 	$(CC) $(SRCDIR)/cooccur.c -o $(BUILDDIR)/cooccur $(CFLAGS)
+
 vocab_count : $(SRCDIR)/vocab_count.c
 	$(CC) $(SRCDIR)/vocab_count.c -o $(BUILDDIR)/vocab_count $(CFLAGS)
 
+wordcooccurleftfixlen: $(SRCDIR)/wordcooccurleftfixlen.c
+	$(CC) $(SRCDIR)/wordcooccurleftfixlen.c  -o $(BUILDDIR)/wordcooccurleftfixlen $(CFLAGS)
+
 clean:
-	rm -rf vocab_count build cooccur
+	rm -rf vocab_count build cooccur wordcooccurleftfixlen

@@ -1,19 +1,23 @@
 
 # Author: Hirotaka Niitsuma
-# @2018 Hirotaka Niirtsuma
+# @2018 Hirotaka Niitsuma
 #
 # You can use this code olny for self evaluation.
 # Cannot use this code for commercial and academical use.
 # 
 # pantent pending
 #  https://patentscope2.wipo.int/search/ja/detail.jsf?docId=JP225380312
-#  Japan patent office patent number 2017-007741
+#  Japan patent office patent number 2017-007741, 2018-126430
 
+import os
 import numpy as np
 import scipy
-from scipy.sparse import dok_matrix,lil_matrix, csr_matrix,coo_matrix
+from scipy.sparse import dok_matrix,lil_matrix, csr_matrix,coo_matrix,isspmatrix_coo,isspmatrix_csc,isspmatrix_csr
 
 from delayedsparse import CA
+
+from numba import jit, prange,njit
+
 
 def index2word_load_vocab_freq_rows_txt(filename):
     
@@ -41,6 +45,8 @@ def load_sparse_coo_bin(filepath,shape,dtype_read=np.float64,dtype_subst=np.uint
             row.append(ij[0]-1+index_shift)
             col.append(ij[1]-1+index_shift)
             data.append(c[0])
+    print(min(row),min(col))
+    print(max(row),max(col))
     m=coo_matrix((data,(row,col)),shape=shape)
     return m
 
@@ -58,8 +64,31 @@ def index2word_save_csv(filename,index2word):
         writer = csv.writer(f, lineterminator='\n')
         writer.writerow(index2word)
 
+@jit(nopython=True, parallel=True)
+def rate_truncated_contingencytable_coo_sub(data,row,col,ratevec,sum_in_row):
+    for l in prange(len(data)):
+        i=row[l]
+        j=col[l]
+        if data[l] < sum_in_row[i]*ratevec[j]:
+            data[l] =0
+                
+def rate_truncated_contingencytable(ct,ratevec,sum_in_row=None):
+    if sum_in_row is None:
+        sum_in_row=np.array(ct.T.sum(axis=0))[0,:]
+    if isspmatrix_coo(ct):
+        rate_truncated_contingencytable_coo_sub(ct.data,ct.row,ct.col,ratevec,sum_in_row)
+    # elif isspmatrix_csc(ct) or isinstance(ct,csc_file_matrix):
+    #     rate_truncated_contingencytable_csc_sub(ct.shape[1],ct.data,ct.indptr,ct.indices,ratevec,sum_in_row)
+    # elif isspmatrix_csr(ct) or isinstance(ct,csr_file_matrix):
+    #     rate_truncated_contingencytable_csr_sub(ct.shape[0],ct.data,ct.indptr,ct.indices,ratevec,sum_in_row)
+    else:
+        raise NotImplementedError("not implemented")
+    ct.eliminate_zeros()
+    return ct
+
+        
 class WordCA:
-    def __init__(self,corpus_file_name=None, size=1000, window=30, min_count=5,index_shift=0,vec_mode='F',similarity_mode='dot'):
+    def __init__(self,corpus_file_name=None, size=8000, window=24, min_count=5,index_shift=1,vec_mode='F',similarity_mode='dot',contingencytable_mode='tailcut'):
         self.size=size
         self.correspondenceanalysis=CA(size)
         self.similarity_mode=similarity_mode
@@ -68,39 +97,57 @@ class WordCA:
         
         if corpus_file_name is None:
             return
-        filename_base=corpus_file_name+'-'+str(min_count)
-        fname_index2word=filename_base+'.index.csv'
-        
-        filename_base2=filename_base+'-'+str(window)
-        fname_contingencytable=filename_base2+'.ct.npz'
+
+        #filename_base=corpus_file_name
+        filename_base0=corpus_file_name+'-'+str(min_count) #+'-'+str(window)+'-'+str(index_shift)
+
+        filename_base1=filename_base0 +'-'+str(min_count) +'-'+str(window) #+'-'+str(index_shift)
+        #fname_index2word =filename_base0+'.index.csv'
+        fname_index2word =filename_base1+'.index.csv'
+        filename_base2=filename_base1 +'-'+str(index_shift)+'-'+contingencytable_mode
+        fname_contingencytable      =filename_base2+'.ct.npz'        
         fname_correspondenceanalysis=filename_base2+'-'+str(size)+'.dca'
-        import os
+
+        if os.path.exists(fname_index2word):
+            print('load', fname_index2word)
+            self.index2word=index2word_load_csv(filename_base1)
+        else:
+            print('load', filename_base0+'.vocab.txt')
+            self.index2word=index2word_load_vocab_freq_rows_txt(filename_base0+'.vocab.txt')
+            index2word_save_csv(filename_base1,self.index2word)
+            
+        print('len index2word',len(self.index2word))            
+        
         if os.path.exists(fname_correspondenceanalysis+'.npz'):
-            print('load',fname_correspondenceanalysis)
+            print('load', fname_correspondenceanalysis)
             self.correspondenceanalysis.load(fname_correspondenceanalysis+'.npz')
-            self.index2word=index2word_load_csv(filename_base)
             return
         if os.path.exists(fname_contingencytable):
-            print('load',fname_contingencytable)
+            print('load', fname_contingencytable)
             self.contingencytable=scipy.sparse.load_npz(fname_contingencytable)
-            self.correspondenceanalysis.fit(self.contingencytable)
-            self.correspondenceanalysis.save(fname_correspondenceanalysis)
-            return
-        self.load_concurrence_bin(filename_base,window=window,index_shift=index_shift)
-        index2word_save_csv(filename_base,self.index2word)
-        scipy.sparse.save_npz(fname_contingencytable, self.contingencytable)
+        else:
+            if contingencytable_mode == 'glove':
+                self.contingencytable=self.load_concurrence_bin(filename_base0,window=window,index_shift=index_shift,fname_mode='gloveco')
+            elif contingencytable_mode== 'tailcut':
+                contingencytables=[self.load_concurrence_bin(filename_base0,window=k+1,index_shift=index_shift,fname_mode='cooccurrence')  for k in range(window)]
+                sc=contingencytables[0].sum()
+                ratevec =np.array(contingencytables[0].sum(axis=0))[0, :]
+                ratevec /= sc
+                self.contingencytable=0
+                for k in range(window):
+                    self.contingencytable += rate_truncated_contingencytable(contingencytables[k],ratevec)
+            scipy.sparse.save_npz(fname_contingencytable, self.contingencytable)
         self.correspondenceanalysis.fit(self.contingencytable)
         self.correspondenceanalysis.save(fname_correspondenceanalysis)
         return
+
         
-    def load_coo_bin(self,filename):
-        self.contingencytable = load_sparse_coo_bin(filename,self.shape,np.float64,np.uint64,index_shift=self.index_shift)
-        
-    def load_concurrence_bin(self,filename_base,window=0,index_shift=0):
+    def load_concurrence_bin(self,filename_base,window=0,index_shift=0,fname_mode='gloveco'):
         import glob
         import re
         self.index_shift=index_shift
-        rest_str='.cooccurrence.bin'
+        #rest_str='.cooccurrence.bin'
+        rest_str='.'+fname_mode+'.bin'
         files=glob.glob(filename_base+'-*'+rest_str)
         assert len(files)> 0
         i_wins= [int(re.findall(r'\d+', f)[-1]) for f in files]
@@ -108,12 +155,15 @@ class WordCA:
             self.window=max(i_wins)
         else:
             self.window=window
-        self.index2word=index2word_load_vocab_freq_rows_txt(filename_base+'.vocab.txt')
         self.n_vocab=len(self.index2word)
         self.shape=(self.n_vocab+self.index_shift, self.n_vocab+self.index_shift)
+        print('shape',self.shape)
         fn=filename_base+'-'+str(self.window)+rest_str
-        self.load_coo_bin(fn)
-
+        if fname_mode=='cooccurrence':
+            assert self.index_shift==1
+            return load_sparse_coo_bin(fn,self.shape,np.float64,np.uint64,index_shift=0)
+        else:
+            return load_sparse_coo_bin(fn,self.shape,np.float64,np.uint64,index_shift=self.index_shift)
         
 
 def word_similarity_model(model,x, y):
@@ -163,11 +213,15 @@ def eval_ws(model,wsfile='testsets/ws/ws353_similarity.txt'):
 
 if __name__ == '__main__':
     import sys
-    if len(sys.argv)==2:
+    if len(sys.argv) > 1:
+        print(sys.argv)
         corpus=sys.argv[1]
-        print(corpus)
-        #corpus='text01'
-        wca=WordCA(corpus)
+        min_count=int(sys.argv[2])
+        window=int(sys.argv[3])
+        size=int(sys.argv[4])
+        mode=sys.argv[5]
+        wca=WordCA(corpus,size=size,window=window,min_count=min_count,contingencytable_mode=mode)
+        
         wsfile='testsets/ws/ws353_similarity.txt'
         print(wsfile)
         print('word similarity score=',eval_ws(wca))

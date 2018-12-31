@@ -15,7 +15,9 @@ fi
 make
 
 BUILDDIR=build
-for CORPUS in text01  text8 ; do
+#for CORPUS in text01  text8 ; do
+for CORPUS in text01 ; do
+
     echo $CORPUS
 
     VOCAB_MIN_COUNT=5
@@ -24,15 +26,21 @@ for CORPUS in text01  text8 ; do
     VERBOSE=0
     MEMORY=20.0
 
-
     VOCAB_FILE=$CORPUS-$VOCAB_MIN_COUNT.vocab.txt
-    $BUILDDIR/vocab_count -min-count $VOCAB_MIN_COUNT -verbose $VERBOSE < $CORPUS > $VOCAB_FILE
+    #$BUILDDIR/vocab_count -min-count $VOCAB_MIN_COUNT -verbose $VERBOSE < $CORPUS > $VOCAB_FILE
+    if [ -e $VOCAB_FILE ]; then
+	echo "$VOCAB_FILE found"
+    else
+	$BUILDDIR/vocab_count -min-count $VOCAB_MIN_COUNT -verbose $VERBOSE < $CORPUS > $VOCAB_FILE
+    fi
 
-    COOCCURRENCE_FILE=$CORPUS-$VOCAB_MIN_COUNT-$WINDOW_SIZE.cooccurrence.bin
-
-    $BUILDDIR/cooccur -memory $MEMORY -vocab-file $VOCAB_FILE -verbose $VERBOSE -window-size $WINDOW_SIZE < $CORPUS > $COOCCURRENCE_FILE
-
-
-    python3 wordca.py  $CORPUS
+    COOCCURRENCE_FILE=$CORPUS-$VOCAB_MIN_COUNT-$WINDOW_SIZE.gloveco.bin
+    if [ -e $COOCCURRENCE_FILE ]; then
+	echo "$COOCCURRENCE_FILE found"
+    else
+	$BUILDDIR/cooccur -memory $MEMORY -vocab-file $VOCAB_FILE -verbose $VERBOSE -window-size $WINDOW_SIZE < $CORPUS > $COOCCURRENCE_FILE
+    fi
+    
+    python3 wordca.py  $CORPUS $VOCAB_MIN_COUNT $WINDOW_SIZE 1000 glove
 
 done 
