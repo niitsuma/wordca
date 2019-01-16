@@ -14,14 +14,7 @@ fi
 
 make
 
-BUILDDIR=build
-for CORPUS in text01 text8 ; do
-    echo $CORPUS
 
-    VOCAB_MIN_COUNT=5
-    WINDOW_SIZE_MAX=24
-    VECTOR_SIZE=8000
-    bash tailcut.sh  $CORPUS  $VOCAB_MIN_COUNT $WINDOW_SIZE_MAX $VECTOR_SIZE
-    #python3 wordca.py  $CORPUS $VOCAB_MIN_COUNT $WINDOW_SIZE_MAX 1000 tailcut 
+bash tailcut.sh  text01 5  24  1000
+bash tailcut.sh  text8  5  24  8000
 
-done 

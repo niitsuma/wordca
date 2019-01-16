@@ -27,8 +27,25 @@ def index2word_load_vocab_freq_rows_txt(filename):
         index2word = [x.rstrip().split(' ')[0] for x in f.readlines()]
     return index2word
 
-def load_sparse_coo_bin(filepath,shape,dtype_read=np.float64,dtype_subst=np.uint64,index_shift=1):
 
+# @jit('[int32,int32,float64]()')
+# def load_sparse_coo_bin_list(rfp,shape,dtype_read,dtype_subst,index_shift):
+#     row  = []
+#     col  = []
+#     data = []
+#     #with open(filepath,"rb") as rfp:
+#     while True:
+#         ij = np.fromfile(rfp,np.int32 , 2)
+#         if ij.size < 2:
+#             break
+#         c = np.fromfile(rfp,dtype_read , 1)
+#         row.append(ij[0]-1+index_shift)
+#         col.append(ij[1]-1+index_shift)
+#         data.append(c[0])
+#     return [row,col,data]
+
+#@jit(nopython=True, parallel=True)
+def load_sparse_coo_bin(filepath,shape,dtype_read=np.float64,dtype_subst=np.uint64,index_shift=1):
     ## load GloVe coo file to coo_matrix
     
     if dtype_subst is None:
@@ -37,6 +54,7 @@ def load_sparse_coo_bin(filepath,shape,dtype_read=np.float64,dtype_subst=np.uint
     col  = []
     data = []
     with open(filepath,"rb") as rfp:
+        #[row,col,data]=load_sparse_coo_bin_list(rfp,shape,dtype_read,dtype_subst,index_shift)
         while True:
             ij = np.fromfile(rfp,np.int32 , 2)
             if ij.size < 2:
@@ -45,8 +63,8 @@ def load_sparse_coo_bin(filepath,shape,dtype_read=np.float64,dtype_subst=np.uint
             row.append(ij[0]-1+index_shift)
             col.append(ij[1]-1+index_shift)
             data.append(c[0])
-    print(min(row),min(col))
-    print(max(row),max(col))
+    #print(min(row),min(col))
+    #print(max(row),max(col))
     m=coo_matrix((data,(row,col)),shape=shape)
     return m
 
@@ -98,13 +116,10 @@ class WordCA:
         if corpus_file_name is None:
             return
 
-        #filename_base=corpus_file_name
-        filename_base0=corpus_file_name+'-'+str(min_count) #+'-'+str(window)+'-'+str(index_shift)
-
-        filename_base1=filename_base0 +'-'+str(min_count) +'-'+str(window) #+'-'+str(index_shift)
-        #fname_index2word =filename_base0+'.index.csv'
+        filename_base0   =corpus_file_name+'-'+str(min_count) 
+        filename_base1   =filename_base0 +'-'+str(window) 
         fname_index2word =filename_base1+'.index.csv'
-        filename_base2=filename_base1 +'-'+str(index_shift)+'-'+contingencytable_mode
+        filename_base2   =filename_base1 +'-'+str(index_shift)+'-'+contingencytable_mode
         fname_contingencytable      =filename_base2+'.ct.npz'        
         fname_correspondenceanalysis=filename_base2+'-'+str(size)+'.dca'
 
@@ -129,13 +144,18 @@ class WordCA:
             if contingencytable_mode == 'glove':
                 self.contingencytable=self.load_concurrence_bin(filename_base0,window=window,index_shift=index_shift,fname_mode='gloveco')
             elif contingencytable_mode== 'tailcut':
-                contingencytables=[self.load_concurrence_bin(filename_base0,window=k+1,index_shift=index_shift,fname_mode='cooccurrence')  for k in range(window)]
-                sc=contingencytables[0].sum()
-                ratevec =np.array(contingencytables[0].sum(axis=0))[0, :]
+                contingencytable0=self.load_concurrence_bin(filename_base0,window=1,index_shift=index_shift,fname_mode='cooccurrence')
+                sc=contingencytable0.sum()
+                #contingencytables=[self.load_concurrence_bin(filename_base0,window=k+1,index_shift=index_shift,fname_mode='cooccurrence')  for k in range(window)]
+                #sc=contingencytables[0].sum()
+                ratevec =np.array(contingencytable0.sum(axis=0))[0, :]
                 ratevec /= sc
-                self.contingencytable=0
-                for k in range(window):
-                    self.contingencytable += rate_truncated_contingencytable(contingencytables[k],ratevec)
+                #self.contingencytable=0
+                self.contingencytable =rate_truncated_contingencytable(contingencytable0,ratevec)
+                del contingencytable0
+                for k in range(1,window+1):
+                    self.contingencytable += rate_truncated_contingencytable(self.load_concurrence_bin(filename_base0,window=k,index_shift=index_shift,fname_mode='cooccurrence'),ratevec)
+                    #self.contingencytable += rate_truncated_contingencytable(contingencytables[k],ratevec)
             scipy.sparse.save_npz(fname_contingencytable, self.contingencytable)
         self.correspondenceanalysis.fit(self.contingencytable)
         self.correspondenceanalysis.save(fname_correspondenceanalysis)
@@ -159,6 +179,7 @@ class WordCA:
         self.shape=(self.n_vocab+self.index_shift, self.n_vocab+self.index_shift)
         print('shape',self.shape)
         fn=filename_base+'-'+str(self.window)+rest_str
+        print(fn)
         if fname_mode=='cooccurrence':
             assert self.index_shift==1
             return load_sparse_coo_bin(fn,self.shape,np.float64,np.uint64,index_shift=0)
@@ -221,10 +242,11 @@ if __name__ == '__main__':
         size=int(sys.argv[4])
         mode=sys.argv[5]
         wca=WordCA(corpus,size=size,window=window,min_count=min_count,contingencytable_mode=mode)
-        
-        wsfile='testsets/ws/ws353_similarity.txt'
-        print(wsfile)
-        print('word similarity score=',eval_ws(wca))
+        print('------')
+        print('similarity eval')
+        for wsfile in ['ws353.txt','ws353_similarity.txt','ws353_relatedness.txt', 'bruni_men.txt', 'radinsky_mturk.txt', 'SimLex999.txt' ,'luong_rare.txt']:
+            print(wsfile)
+            print('word similarity score=',eval_ws(wca,'testsets/ws/'+wsfile))
 
 
 
