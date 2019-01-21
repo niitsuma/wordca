@@ -2,7 +2,7 @@
 ## Word Correspondence Analysis(WCA)
 Distributed words epresentations using Correspondence Analysis
 
-plz see more description about tail-cut kernel in  https://arxiv.org/abs/1605.05087
+more description in  https://arxiv.org/abs/1605.05087
 
 
 ## demo 
@@ -22,6 +22,20 @@ WINDOW=24
 VECTOR_SIZE=8000
 bash tailcut.sh $CORPUS $MIN_COUNT $WINDOW $VECTOR_SIZE
 ```
+
+### wor2vec format result 
+text8-5-24-1-tailcut-8000.F.vec
+is the result in word2vec format.
+The computed result can be downloaded from
+http://www.suri.cs.okayama-u.ac.jp/~niitsuma/wordca/text8-5-24-1-tailcut-8000.F.vec.bz2
+
+### correspondence analysis result
+text8-5-24-1-tailcut-8000.dca.npz
+contains various information about correspondence analysis.
+Plz see save and load function in 
+https://github.com/niitsuma/delayedsparse/blob/master/delayedsparse/ca.py 
+
+
 
 ## License
 

@@ -116,37 +116,41 @@ class WordCA:
         if corpus_file_name is None:
             return
 
-        filename_base0   =corpus_file_name+'-'+str(min_count) 
-        filename_base1   =filename_base0 +'-'+str(window) 
-        fname_index2word =filename_base1+'.index.csv'
-        filename_base2   =filename_base1 +'-'+str(index_shift)+'-'+contingencytable_mode
-        fname_contingencytable      =filename_base2+'.ct.npz'        
-        fname_correspondenceanalysis=filename_base2+'-'+str(size)+'.dca'
+        self.filename_base0   =corpus_file_name+'-'+str(min_count) 
+        self.filename_base1   =self.filename_base0 +'-'+str(window) 
+        self.fname_index2word =self.filename_base1+'.index.csv'
+        self.filename_base2   =self.filename_base1 +'-'+str(index_shift)+'-'+contingencytable_mode
+        self.fname_contingencytable       = self.filename_base2+'.ct.npz'
+        self.filename_base3=self.filename_base2+'-'+str(size)
+        self.fname_correspondenceanalysis = self.filename_base3+'.dca'
+        self.fname_word2vec = self.filename_base3+'.'+self.vec_mode+'.vec'
 
-        if os.path.exists(fname_index2word):
-            print('load', fname_index2word)
-            self.index2word=index2word_load_csv(filename_base1)
+
+        if os.path.exists(self.fname_index2word):
+            print('load', self.fname_index2word)
+            self.index2word=index2word_load_csv(self.filename_base1)
         else:
-            print('load', filename_base0+'.vocab.txt')
-            self.index2word=index2word_load_vocab_freq_rows_txt(filename_base0+'.vocab.txt')
-            index2word_save_csv(filename_base1,self.index2word)
+            print('load', self.filename_base0+'.vocab.txt')
+            self.index2word=index2word_load_vocab_freq_rows_txt(self.filename_base0+'.vocab.txt')
+            index2word_save_csv(self.filename_base1,self.index2word)
             
         print('len index2word',len(self.index2word))            
         
-        if os.path.exists(fname_correspondenceanalysis+'.npz'):
-            print('load', fname_correspondenceanalysis)
-            self.correspondenceanalysis.load(fname_correspondenceanalysis+'.npz')
+        if os.path.exists(self.fname_correspondenceanalysis+'.npz'):
+            print('load', self.fname_correspondenceanalysis)
+            self.correspondenceanalysis.load(self.fname_correspondenceanalysis+'.npz')
+            self.save_word2vec_format(self.fname_word2vec)
             return
-        if os.path.exists(fname_contingencytable):
-            print('load', fname_contingencytable)
-            self.contingencytable=scipy.sparse.load_npz(fname_contingencytable)
+        if os.path.exists(self.fname_contingencytable):
+            print('load', self.fname_contingencytable)
+            self.contingencytable=scipy.sparse.load_npz(self.fname_contingencytable)
         else:
             if contingencytable_mode == 'glove':
-                self.contingencytable=self.load_concurrence_bin(filename_base0,window=window,index_shift=index_shift,fname_mode='gloveco')
+                self.contingencytable=self.load_concurrence_bin(self.filename_base0,window=window,index_shift=index_shift,fname_mode='gloveco')
             elif contingencytable_mode== 'tailcut':
-                contingencytable0=self.load_concurrence_bin(filename_base0,window=1,index_shift=index_shift,fname_mode='cooccurrence')
+                contingencytable0=self.load_concurrence_bin(self.filename_base0,window=1,index_shift=index_shift,fname_mode='cooccurrence')
                 sc=contingencytable0.sum()
-                #contingencytables=[self.load_concurrence_bin(filename_base0,window=k+1,index_shift=index_shift,fname_mode='cooccurrence')  for k in range(window)]
+                #contingencytables=[self.load_concurrence_bin(self.filename_base0,window=k+1,index_shift=index_shift,fname_mode='cooccurrence')  for k in range(window)]
                 #sc=contingencytables[0].sum()
                 ratevec =np.array(contingencytable0.sum(axis=0))[0, :]
                 ratevec /= sc
@@ -154,11 +158,13 @@ class WordCA:
                 self.contingencytable =rate_truncated_contingencytable(contingencytable0,ratevec)
                 del contingencytable0
                 for k in range(1,window+1):
-                    self.contingencytable += rate_truncated_contingencytable(self.load_concurrence_bin(filename_base0,window=k,index_shift=index_shift,fname_mode='cooccurrence'),ratevec)
+                    self.contingencytable += rate_truncated_contingencytable(self.load_concurrence_bin(self.filename_base0,window=k,index_shift=index_shift,fname_mode='cooccurrence'),ratevec)
                     #self.contingencytable += rate_truncated_contingencytable(contingencytables[k],ratevec)
-            scipy.sparse.save_npz(fname_contingencytable, self.contingencytable)
+            scipy.sparse.save_npz(self.fname_contingencytable, self.contingencytable)
         self.correspondenceanalysis.fit(self.contingencytable)
-        self.correspondenceanalysis.save(fname_correspondenceanalysis)
+        self.correspondenceanalysis.save(self.fname_correspondenceanalysis)
+        self.save_word2vec_format(self.fname_word2vec)
+        
         return
 
         
@@ -185,35 +191,33 @@ class WordCA:
             return load_sparse_coo_bin(fn,self.shape,np.float64,np.uint64,index_shift=0)
         else:
             return load_sparse_coo_bin(fn,self.shape,np.float64,np.uint64,index_shift=self.index_shift)
-        
+
+    def vectors(self):
+        self.vecs=vars(self.correspondenceanalysis)[self.vec_mode]*1.0
+        return self.vecs
+
+    def save_word2vec_format(self,fname=None):
+        print('save_word2vec_format')
+        if fname is None:
+            fname=self.fname_word2vec
+        vecs=self.vectors()
+        with open(fname, 'w') as fout:
+            fout.write("%s %s\n" % (len(self.index2word),self.size))
+            for i,w in enumerate(self.index2word):
+                fout.write("%s %s\n" % (w, ' '.join("%f" % val for val in vecs[i+self.index_shift])))
+            
 
 def word_similarity_model(model,x, y):
-    if not hasattr( model, "vec_mode" ): 
-        model.vec_mode='F'
-        print('set model.vec_mode=F in word_similarity_model')
     if x not in model.index2word:
         return 0
     elif y not in model.index2word:
         return 0
     else:
-        if hasattr( model, "index_shift" ):
-            ix=model.index2word.index(x)+model.index_shift
-            iy=model.index2word.index(y)+model.index_shift
-        else:
-            ix=model.index2word.index(x)
-            iy=model.index2word.index(y)
-        xvec=vars(model.correspondenceanalysis)[model.vec_mode][ix]
-        yvec=vars(model.correspondenceanalysis)[model.vec_mode][iy]
-        if hasattr( model, "similarity_mode" ):
-            if model.similarity_mode=='ndot':
-                den=np.linalg.norm(xvec)*np.linalg.norm(yvec)
-                if den == 0.0:
-                    return 0
-                else:
-                    return xvec.reshape((1,-1)).dot(yvec.reshape((-1,1)))[0][0]/den
-
+        ix=model.index2word.index(x)+model.index_shift
+        iy=model.index2word.index(y)+model.index_shift
+        xvec=model.vecs[ix]
+        yvec=model.vecs[iy]
         return xvec.reshape((1,-1)).dot(yvec.reshape((-1,1)))[0][0]
-
 
 def eval_ws(model,wsfile='testsets/ws/ws353_similarity.txt'):
     def read_ws_test_set(path):
